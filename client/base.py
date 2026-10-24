@@ -54,17 +54,19 @@ class BaseClient:
     REQUEST_TIMEOUT = 30.0
 
     def __init__(self):
-        """Initialize the base client with credentials from environment variables."""
-        client_id = os.getenv("TRAKT_CLIENT_ID")
-        client_secret = os.getenv("TRAKT_CLIENT_SECRET")
+        """Initialize the base client with credentials from environment variables.
 
-        if not client_id or not client_secret:
+        The client secret is optional: Trakt public (PKCE) apps have none.
+        """
+        client_id = os.getenv("TRAKT_CLIENT_ID")
+
+        if not client_id:
             raise ValueError(
                 "Trakt API credentials not found. Please check your .env file."
             )
 
         self.client_id: str = client_id
-        self.client_secret: str = client_secret
+        self.client_secret: str | None = os.getenv("TRAKT_CLIENT_SECRET") or None
         self.headers: dict[str, str] = {
             "Content-Type": "application/json",
             "trakt-api-version": "2",

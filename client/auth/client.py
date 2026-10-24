@@ -49,6 +49,16 @@ class AuthClient(BaseClient):
         if self.auth_token:
             self._update_headers_with_token()
 
+    def _client_credentials(self) -> dict[str, str]:
+        """Build the client credential fields for OAuth token requests.
+
+        Public (PKCE) Trakt apps have no secret, so it is only sent when set.
+        """
+        credentials = {"client_id": self.client_id}
+        if self.client_secret:
+            credentials["client_secret"] = self.client_secret
+        return credentials
+
     def _load_auth_token(self) -> TraktAuthToken | None:
         """Load authentication token from storage."""
         if os.path.exists(AUTH_TOKEN_FILE):
@@ -136,8 +146,7 @@ class AuthClient(BaseClient):
         payload = DeviceTokenRequest.model_validate({"code": device_code})
         data = {
             "code": payload.code,
-            "client_id": self.client_id,
-            "client_secret": self.client_secret,
+            **self._client_credentials(),
         }
 
         token = await self._post_typed_request(
@@ -174,8 +183,7 @@ class AuthClient(BaseClient):
 
             data = {
                 "refresh_token": auth_snapshot.refresh_token,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
+                **self._client_credentials(),
                 "redirect_uri": OAUTH_REDIRECT_URI,
                 "grant_type": "refresh_token",
             }

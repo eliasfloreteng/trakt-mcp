@@ -36,6 +36,88 @@ async def test_auth_client_init_without_credentials(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
+async def test_auth_client_init_without_client_id(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TRAKT_CLIENT_ID", "")
+    monkeypatch.setenv("TRAKT_CLIENT_SECRET", "test_secret")
+
+    with pytest.raises(ValueError, match="Trakt API credentials not found"):
+        AuthClient()
+
+
+@pytest.mark.asyncio
+async def test_auth_client_init_public_client(monkeypatch: pytest.MonkeyPatch):
+    """Public (PKCE) Trakt apps have a client ID but no secret."""
+    monkeypatch.setenv("TRAKT_CLIENT_ID", "test_id")
+    monkeypatch.delenv("TRAKT_CLIENT_SECRET", raising=False)
+
+    client = AuthClient()
+    assert client.client_id == "test_id"
+    assert client.client_secret is None
+
+
+@pytest.mark.parametrize(
+    ("client_secret", "expected_credentials"),
+    [
+        ("test_secret", {"client_id": "test_id", "client_secret": "test_secret"}),
+        ("", {"client_id": "test_id"}),
+    ],
+)
+@pytest.mark.asyncio
+async def test_token_requests_send_secret_only_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+    client_secret: str,
+    expected_credentials: dict[str, str],
+) -> None:
+    current_time = int(time.time())
+    monkeypatch.setenv("TRAKT_CLIENT_ID", "test_id")
+    monkeypatch.setenv("TRAKT_CLIENT_SECRET", client_secret)
+
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "access_token": "access_token_123",
+        "refresh_token": "refresh_token_123",
+        "expires_in": 7200,
+        "created_at": current_time,
+        "scope": "public",
+        "token_type": "bearer",
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with (
+        patch("httpx.AsyncClient") as mock_client,
+        patch("dotenv.load_dotenv"),
+        patch("os.path.exists", return_value=False),
+        patch.object(AuthClient, "_save_auth_token"),
+    ):
+        mock_instance = MagicMock()
+        mock_instance.post = AsyncMock(return_value=mock_response)
+        mock_instance.aclose = AsyncMock()
+        mock_client.return_value = mock_instance
+
+        client = AuthClient()
+        await client.get_device_token("device_code_123")
+        client.auth_token = TraktAuthToken(
+            access_token="old_access_token",
+            refresh_token="old_refresh_token",
+            expires_in=3600,
+            created_at=current_time - 4000,
+            scope="public",
+            token_type="bearer",
+        )
+        assert await client.refresh_access_token() is True
+
+        device_token_body, refresh_body = (
+            call.kwargs["json"] for call in mock_instance.post.call_args_list
+        )
+        credential_keys = {"client_id", "client_secret"}
+        for body in (device_token_body, refresh_body):
+            sent_credentials = {
+                key: value for key, value in body.items() if key in credential_keys
+            }
+            assert sent_credentials == expected_credentials
+
+
+@pytest.mark.asyncio
 async def test_auth_client_load_auth_token_success(monkeypatch: pytest.MonkeyPatch):
     mock_token_data = {
         "access_token": "test_access_token",

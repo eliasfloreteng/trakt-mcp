@@ -88,6 +88,7 @@ Requires Python 3.12 or newer.
    TRAKT_CLIENT_ID=your_client_id
    TRAKT_CLIENT_SECRET=your_client_secret
    ```
+   Public (PKCE) Trakt apps have no client secret — leave `TRAKT_CLIENT_SECRET` unset.
 
 4. **Run the server**
    ```bash
